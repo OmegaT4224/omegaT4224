@@ -1,3 +1,954 @@
+
+https://docs.gitlab.com/ci/environments/environments_dashboard/dataset framework built. grab it here:
+
+* [Download folder](sandbox:/mnt/data/gene_framework)
+* [README](sandbox:/mnt/data/gene_framework/README.txt)
+* Schemas:
+
+  * [person.schema.json](sandbox:/mnt/data/gene_framework/schema/person.schema.json)
+  * [event.schema.json](sandbox:/mnt/data/gene_framework/schema/event.schema.json)
+  * [source.schema.json](sandbox:/mnt/data/gene_framework/schema/source.schema.json)
+* Samples you can open/edit:
+
+  * [people.sample.csv](sandbox:/mnt/data/gene_framework/samples/people.sample.csv)
+  * [events.sample.csv](sandbox:/mnt/data/gene_framework/samples/events.sample.csv)
+  * [sources.sample.csv](sandbox:/mnt/data/gene_framework/samples/sources.sample.csv)
+* Math utilities:
+
+  * [gene\_time\_model.py](sandbox:/mnt/data/gene_framework/python/gene_time_model.py)
+
+how to run the math layer (ages, generation index, branching forecast):
+
+```bash
+python /mnt/data/gene_framework/python/gene_time_model.py
+```
+
+how this encodes “validated times, deaths, births” as math:
+
+* every event is ISO-dated and lives in an `events.csv` row; the model reduces dates to year for calculations.
+* people are nodes; parent links form a DAG; we compute generation numbers BFS from a founder.
+* `compute_ages()` gives age-at-event; `intergen_gap()` gives parent→child year gaps.
+* `forecast_descendants()` is a Galton–Watson branching process with Poisson(μ) offspring to predict future lineage spread; tweak `mu` and generations for scenarios.
+
+want me to auto-ingest the Kamehameha doc you uploaded next and populate these CSVs, then bake the outputs into your ReflectChain Genesis + daily Godmode reports?
+The GitLab Handbook
+GitLab
+TeamOps
+Handbook
+Job Families
+The Handbook
+Engineering
+Infrastructure
+Infrastructure Environments
+Environments Canary Stage
+Environments Canary Stage
+Detailed information about how the Canary stage works in our Environments
+Environments Canary Stage
+Some of our environments in use at GitLab are split into two separate logical deployments of components, called “stages”. The two stages are “main” and “canary” (sometimes shortened to cny).
+
+The reason for the canary stages is to allow us to test new releases of the GitLab software in a controlled and isolated fashion, before rolling it out to all users.
+
+What is different and what is shared between “canary” and “main” stages?
+The Canary stage contains code functional elements like web, container registry and git servers while sharing data elements such as sidekiq, database and file storage with the main stage of the environment. This allows UX code and most application logic code to be consumed by a smaller subset of users under real world scenarios before being made available to all users on the environment.
+
+Currently a canary stage covers the following services
+
+GitLab web
+GitLab api
+GitLab Git https
+GitLab websockets
+GitLab registry
+GitLab pages
+GitLab shell
+Gitaly *(see below)
+Praefect *(see below)
+Currently a canary stage does not cover the following services (when using canary for these services, you are using the version running in the “main” stage)
+
+Sidekiq
+GitLab Agent for Kubernetes
+Mailroom
+Redis
+PostgreSQL
+How does Gitaly and Praefect work in a canary stage?
+As Gitaly and Praefect nodes are randomly (with weighting) chosen to store Git data, it’s not entirely possible to have a clean separation of Gitaly/Praefect nodes between stages.
+
+What this means is that when using an environment, the Gitaly/Praefect code used (depending on the repository in question, see below) may be from either stage (main or canary), regardless of what stage you are using through the web frontend, or what you have selected in next.gitlab.com. What Gitaly/Prafect node is used follows the following rules
+
+If you are modifying an existing repository, you will use the Gitaly server that the shard is currently assigned to.
+If you are forking a repository, you will stay on the same shard
+Otherwise, rails will select a random shard using weighted probabilities based on the weights assigned in the storage configuration
+In the production environment, the following well known groups/repos are run of Gitaly/Praefect nodes in the canary stage exclusively
+
+https://gitlab.com/gitlab-org
+Accessing the canary stage of an environment
+The credentials you use and permissions you have in the “canary” stage of an environment is identical to the “main” stage of the environment.
+
+At a technical level, access to the canary stage of an environment is accomplished in one of the following ways
+
+Manually setting the gitlab_canary cookie to true in whatever browser/tool you are using to talk to the environment
+Going to next.gitlab.com and at the toggle on the page, selecting “Next” instead of “Current”. Note this changes which stage you are using (main or canary) across all environments.
+The canary stage is also automatically used in the following circumstances (with caveats)
+
+5% of traffic for the “main” stage is automatically instead sent to the “canary” stage of an environment if the gitlab_canary is not set which is the default for most users. If you wish to ensure your requests are never sent to canary, manually set the gitlab_canary cookie to false in whatever browser/tool you are using to talk to the environment or ensure that “current” is toggled on https://next.gitlab.com
+In the production environment only, the canary stage is forcibly enabled for all users visiting GitLab Inc. operated groups:
+GitLab.com
+GitLab.org
+charts Unless you choose to manually opt out of using Canary on next.gitlab.com
+The traffic share is not exactly 5%. The current baseline is 4.7% determined by HAProxy weights, but the actual amount depends on several factors including: Availability of zones in GCP, time of day, share of traffic to GitLab groups.
+Confirming I am using the “canary” stage of an environment
+The best method when using the UI is to enable the performance bar and look at the name of the Kubernetes pod service your page. If it starts with gitlab-cny (and has a baby chicken next to it), you are using the canary stage. There will also be the word “next” in a green box next to the GitLab logo in the top left.
+
+How do I view logs specifically for the canary stage of an environment?
+When looking at logs for an environment in Elasticsearch, you can add a filter for json.stage.keyword is cny and that will only show you logs from the canary stage of the service in the environment.
+
+How do I view metrics specifically for the canary stage of an environment?
+When looking at a metrics dashboard in dashboards.gitlab.net for an environment, choose cny from the drop down for stage at the top.
+
+How do I change a feature flag for canary stage?
+As the database (where feature flags are stored) is shared between main and canary stage, enabling a feature flag following the normal chatops process) for the environment will change it for both main and canary stages of an environment.
+
+Some examples for the most commonly used environments are as follows
+
+Feature flags on staging and staging-canary:
+
+Enable: /chatops run feature set feature_flag_name true --staging
+Disable: /chatops run feature set feature_flag_name false --staging
+Feature flags on production and production-canary:
+
+Enable /chatops run feature set feature_flag_name true
+Disable /chatops run feature set feature_flag_name false
+How do I get console access to the canary stage?
+Currently the canary stage has no console access, you can standard console access process to access a console server in the environment running the main stage of the code only. Note that as the database is shared between stages, depending on what actions your perform in the console, it will affect the “canary” stage as well as the “main” stage.
+
+Globally disabling the canary stage
+The Infrastructure department teams can globally disable use of canary in an environment if it is deemed necessary. As this is very disruptive to the testing and deployment process, the typical process for doing starts with declaring an incident.
+
+Disabling canary stage in an environment
+The chatops command to disable canary in an environment is as follows
+
+## Disable production-canary
+/chatops run canary --disable --production
+
+## Disable staging-canary
+/chatops run canary --disable
+Re-enabling canary stage in an environment
+The chatops command to re-enable canary in an environment is as follows
+
+## Disable production-canary
+/chatops run canary --enable --production
+
+## Disable staging-canary
+/chatops run canary --enable
+Last modified June 27, 2024: Fix various vale errors (46417d02)
+ View page source -  Edit this page - please contribute. Creative Commons License
+  
+© 2025 GitLab All Rights Reserved
+Privacy Statement  Cookie Preferences
+# Build a validated dataset framework for genealogical timelines (births, deaths, marriages)
+# Files created under /mnt/data/gene_framework
+
+import os, json, textwrap, pandas as pd
+base = "/mnt/data/gene_framework"
+os.makedirs(base, exist_ok=True)
+os.makedirs(f"{base}/schema", exist_ok=True)
+os.makedirs(f"{base}/samples", exist_ok=True)
+os.makedirs(f"{base}/python", exist_ok=True)
+
+# 1) JSON Schemas
+person_schema = {
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Person",
+  "type": "object",
+  "required": ["id", "name"],
+  "properties": {
+    "id": {"type": "string", "pattern": "^[A-Za-z0-9_.:-]+$"},
+    "name": {"type": "string", "minLength": 1},
+    "sex": {"type": "string", "enum": ["F","M","U"]},
+    "born": {"type": ["string","null"], "pattern": "^\\d{4}(-\\d{2}){0,2}$"},
+    "born_place": {"type": ["string","null"]},
+    "died": {"type": ["string","null"], "pattern": "^\\d{4}(-\\d{2}){0,2}$"},
+    "died_place": {"type": ["string","null"]},
+    "father_id": {"type": ["string","null"]},
+    "mother_id": {"type": ["string","null"]},
+    "notes": {"type": ["string","null"]},
+    "source_ids": {"type": "array", "items": {"type":"string"}}
+  },
+  "additionalProperties": False
+}
+
+event_schema = {
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Event",
+  "type": "object",
+  "required": ["id", "type", "t"],
+  "properties": {
+    "id": {"type": "string", "pattern": "^[A-Za-z0-9_.:-]+$"},
+    "type": {"type": "string", "enum": ["birth","death","marriage","divorce","baptism","burial","custom"]},
+    "t": {"type": "string", "pattern": "^\\d{4}(-\\d{2}){0,2}$"},
+    "who": {
+      "oneOf": [
+        {"type": "string"},
+        {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 2}
+      ]
+    },
+    "place": {"type": ["string","null"]},
+    "certainty": {"type": "number", "minimum": 0, "maximum": 1},
+    "source_ids": {"type": "array", "items": {"type":"string"}},
+    "payload": {"type": ["object","null"]}
+  },
+  "additionalProperties": False
+}
+
+source_schema = {
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Source",
+  "type": "object",
+  "required": ["id", "title"],
+  "properties": {
+    "id": {"type": "string"},
+    "title": {"type": "string"},
+    "citation": {"type": ["string","null"]},
+    "url": {"type": ["string","null"]},
+    "date_accessed": {"type": ["string","null"], "pattern": "^\\d{4}(-\\d{2}){0,2}$"},
+    "hash": {"type": ["string","null"]}
+  },
+  "additionalProperties": False
+}
+
+with open(f"{base}/schema/person.schema.json","w") as f: json.dump(person_schema,f,indent=2)
+with open(f"{base}/schema/event.schema.json","w") as f: json.dump(event_schema,f,indent=2)
+with open(f"{base}/schema/source.schema.json","w") as f: json.dump(source_schema,f,indent=2)
+
+# 2) CSV templates (people, events, sources)
+people_cols = ["id","name","sex","born","born_place","died","died_place","father_id","mother_id","notes","source_ids"]
+events_cols = ["id","type","t","who","place","certainty","source_ids","payload"]
+sources_cols = ["id","title","citation","url","date_accessed","hash"]
+
+pd.DataFrame(columns=people_cols).to_csv(f"{base}/samples/people.csv", index=False)
+pd.DataFrame(columns=events_cols).to_csv(f"{base}/samples/events.csv", index=False)
+pd.DataFrame(columns=sources_cols).to_csv(f"{base}/samples/sources.csv", index=False)
+
+# 3) Sample minimal rows (demonstration only)
+people_sample = pd.DataFrame([
+    {"id":"KAM-I","name":"Kamehameha I","sex":"M","born":"1758","born_place":"Kohala, Hawaiʻi","died":"1819-05-08","died_place":"Kailua, Hawaiʻi","father_id":None,"mother_id":None,"notes":"Founder anchor","source_ids":"src_kam_master"},
+    {"id":"P674","name":"Delphine Analani Purdy","sex":"F","born":"1955-01-04","born_place":"Honolulu, Oʻahu","died":None,"died_place":None,"father_id":"P454","mother_id":"AAY","notes":None,"source_ids":"src_kam_master"},
+    {"id":"P454","name":"William Ulumaheihei Purdy Jr.","sex":"M","born":"1926-12-24","born_place":"Keokea, Maui","died":"1955-04-28","died_place":"Fort Dix, NJ","father_id":None,"mother_id":None,"notes":None,"source_ids":"src_kam_master"},
+    {"id":"AAY","name":"Annie Analani Young","sex":"F","born":"1932-08-16","born_place":"Kalaloa, Hawaiʻi","died":None,"died_place":None,"father_id":None,"mother_id":None,"notes":None,"source_ids":"src_kam_master"}
+])
+events_sample = pd.DataFrame([
+    {"id":"E-P674-birth","type":"birth","t":"1955-01-04","who":"P674","place":"Honolulu, Oʻahu","certainty":1.0,"source_ids":"src_kam_master","payload":""},
+    {"id":"E-P454-death","type":"death","t":"1955-04-28","who":"P454","place":"Fort Dix, NJ","certainty":1.0,"source_ids":"src_kam_master","payload":""},
+    {"id":"E-P454-AAY-marriage","type":"marriage","t":"1952-04-05","who":"P454|AAY","place":"","certainty":0.9,"source_ids":"src_kam_master","payload":""}
+])
+sources_sample = pd.DataFrame([
+    {"id":"src_kam_master","title":"Descendants of Kamehameha (Certified Copy)","citation":"Iolani Palace Archives, 1980","url":"","date_accessed":"2025-08-11","hash":""}
+])
+
+people_sample.to_csv(f"{base}/samples/people.sample.csv", index=False)
+events_sample.to_csv(f"{base}/samples/events.sample.csv", index=False)
+sources_sample.to_csv(f"{base}/samples/sources.sample.csv", index=False)
+
+# 4) Python util: math representation & basic checks
+util_code = r'''
+"""
+gene_time_model.py — Minimal math layer for genealogical timelines
+- Loads people/events CSV
+- Builds generation indices from a founder
+- Computes age-at-event and intergenerational gaps
+- Provides a simple branching predictor
+"""
+
+from __future__ import annotations
+import pandas as pd
+import numpy as np
+from typing import Dict, List, Tuple, Optional
+
+def _to_year(x: str|None) -> Optional[int]:
+    if not x or not isinstance(x,str): return None
+    try:
+        return int(x[:4])
+    except:
+        return None
+
+def build_generation_index(people: pd.DataFrame, founder_id: str) -> pd.Series:
+    # BFS from founder using parent links
+    gen = {founder_id: 0}
+    # Build child map
+    children = {}
+    for _,row in people.iterrows():
+        for p in ["father_id","mother_id"]:
+            pid = row.get(p)
+            if isinstance(pid,str) and pid:
+                children.setdefault(pid,[]).append(row["id"])
+    # BFS
+    frontier = [founder_id]
+    while frontier:
+        nxt=[]
+        for u in frontier:
+            for v in children.get(u,[]):
+                if v not in gen:
+                    gen[v]=gen[u]+1
+                    nxt.append(v)
+        frontier=nxt
+    return pd.Series(gen, name="gen")
+
+def compute_ages(people: pd.DataFrame, events: pd.DataFrame) -> pd.DataFrame:
+    B = {r["id"]:_to_year(r["born"]) for _,r in people.iterrows()}
+    rows=[]
+    for _,e in events.iterrows():
+        who = e["who"]
+        t = _to_year(e["t"])
+        if t is None: continue
+        ids = who.split('|') if isinstance(who,str) else [who]
+        for pid in ids:
+            by = B.get(pid)
+            age = t - by if (by is not None) else None
+            rows.append({"event_id":e["id"],"type":e["type"],"person_id":pid,"year":t,"age_at_event":age})
+    return pd.DataFrame(rows)
+
+def intergen_gap(people: pd.DataFrame) -> pd.DataFrame:
+    # naive: where both child and parent birth year known
+    y = people[["id","born","father_id","mother_id"]].copy()
+    y["child_year"]=y["born"].apply(_to_year)
+    rows=[]
+    for _,r in y.iterrows():
+        for p in ["father_id","mother_id"]:
+            pid=r[p]
+            if isinstance(pid,str) and pid in y.set_index("id").index:
+                py=_to_year(y.set_index("id").loc[pid,"born"])
+                if (py is not None) and (r["child_year"] is not None):
+                    rows.append({"parent_id":pid,"child_id":r["id"],"gap_years":r["child_year"]-py})
+    return pd.DataFrame(rows)
+
+def forecast_descendants(mu: float=1.7, generations:int=4, sims:int=10000, start:int=1) -> Dict[str,float]:
+    q=[]
+    for _ in range(sims):
+        z=start
+        total=0
+        for _ in range(generations):
+            z = np.sum(np.random.poisson(mu, size=z))
+            total += z
+        q.append(total)
+    return {"p05":float(np.percentile(q,5)),"p50":float(np.percentile(q,50)),"p95":float(np.percentile(q,95))}
+
+def load_samples(root:str) -> Tuple[pd.DataFrame,pd.DataFrame]:
+    people=pd.read_csv(f"{root}/samples/people.sample.csv")
+    events=pd.read_csv(f"{root}/samples/events.sample.csv")
+    return people, events
+
+if __name__=="__main__":
+    root = "/mnt/data/gene_framework"
+    people, events = load_samples(root)
+    gen = build_generation_index(people, founder_id="KAM-I")
+    ages = compute_ages(people, events)
+    gaps = intergen_gap(people)
+    pred = forecast_descendants()
+    print("Generation index (non-empty):")
+    print(gen.head())
+    print("\nEvent ages:")
+    print(ages.head())
+    print("\nIntergenerational gaps (yrs):")
+    print(gaps.head())
+    print("\nBranching forecast:", pred)
+'''
+with open(f"{base}/python/gene_time_model.py","w") as f:
+    f.write(util_code)
+
+# 5) README
+readme = """\
+Genealogical Time Dataset Framework
+===================================
+
+Files:
+- schema/person.schema.json — JSON Schema for people records.
+- schema/event.schema.json — JSON Schema for time-stamped events.
+- schema/source.schema.json — JSON Schema for source metadata.
+- samples/people.csv — empty template.
+- samples/events.csv — empty template.
+- samples/sources.csv — empty template.
+- samples/people.sample.csv — sample rows (incl. Kamehameha I anchor, Purdy line).
+- samples/events.sample.csv — sample events (birth/death/marriage).
+- python/gene_time_model.py — minimal math layer (generation index, ages, gaps, branching forecast).
+
+Mathematical Representation:
+- Time axis: ISO dates; math uses year (first 4 digits).
+- Graph: directed edges parent→child; founder generation = 0.
+- Functions:
+  build_generation_index(): BFS from founder to assign generation numbers.
+  compute_ages(): age at event = year(event) − year(birth).
+  intergen_gap(): parent-child birth year gap distribution.
+  forecast_descendants(): Galton–Watson Poisson branching (p05/p50/p95).
+
+Quick Start:
+python /mnt/data/gene_framework/python/gene_time_model.py
+"""
+with open(f"{base}/README.txt","w") as f:
+    f.write(readme)
+
+# Display sample tables to the user
+from ace_tools import display_dataframe_to_user
+display_dataframe_to_user("people.sample.csv", people_sample)
+display_dataframe_to_user("events.sample.csv", events_sample)
+display_dataframe_to_user("sources.sample.csv", sources_sample)
+
+base
+Love this. Let’s wire up a tiny **“nanotex”** wrapper so editing feels like nano, but files are already *saved* the moment you exit—no “Write out?” prompt—plus smart templates and exec bits for scripts.
+
+Here’s a drop‑in script and a couple of lightweight templates.
+
+# 1) `~/termux-automation/bin/nanotex` (make executable)
+
+```bash
+#!/usr/bin/env bash
+# nanotex: nano with autosave-on-exit, smart templates, and exec bits for scripts.
+# Usage:
+#   nanotex [--sh|--py|--js|--tpl NAME] [--exec] <path>
+#   echo 'print("hi")' | nanotex --py script.py
+set -euo pipefail
+
+show_help() {
+  cat <<'EOF'
+nanotex: open nano in --tempfile mode (auto-saves on exit), prefill templates, set exec bit for scripts.
+
+Flags:
+  --sh | --py | --js      Choose a built-in template (adds shebang if new file).
+  --tpl NAME              Use template file from $HOME/termux-automation/templates/NAME
+  --exec                  Force chmod +x on save (default for --sh/--py/--js).
+  -h | --help             Show help.
+
+Examples:
+  nanotex --sh ~/bin/backup
+  nanotex --py my_tool.py
+  echo '#!/usr/bin/env bash' | nanotex --sh run.sh
+EOF
+}
+
+lang="" ; tpl="" ; force_exec="false"
+args=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --sh|--py|--js) lang="${1#--}"; shift ;;
+    --tpl) tpl="${2:-}"; shift 2 ;;
+    --exec) force_exec="true"; shift ;;
+    -h|--help) show_help; exit 0 ;;
+    --) shift; break ;;
+    -* ) echo "Unknown option: $1" >&2; show_help; exit 2 ;;
+    *  ) args+=("$1"); shift ;;
+  esac
+done
+[[ ${#args[@]} -ge 1 ]] || { echo "Missing <path>."; show_help; exit 2; }
+path="${args[-1]}"
+
+mkdir -p "$(dirname "$path")"
+
+# Determine if file exists
+is_new="true"
+[[ -e "$path" ]] && is_new="false"
+
+# If it's a new file and a language/template was requested, preseed
+seed_from_lang() {
+  case "$lang" in
+    sh) printf '#!/usr/bin/env bash\nset -euo pipefail\n\n' ;;
+    py) printf '#!/usr/bin/env python3\n# -*- coding: utf-8 -*-\n\nif __name__ == "__main__":\n    pass\n' ;;
+    js) printf '#!/usr/bin/env node\n"use strict";\n\n' ;;
+    "") return 0 ;;
+  esac
+}
+
+seed_from_tpl() {
+  [[ -n "$tpl" ]] || return 0
+  local tdir="$HOME/termux-automation/templates"
+  local tfile="$tdir/$tpl"
+  [[ -f "$tfile" ]] || { echo "Template not found: $tfile" >&2; exit 3; }
+  cat "$tfile"
+}
+
+# If stdin is piped, prefer stdin content; else seed from lang/tpl for brand‑new files
+if [[ "$is_new" == "true" ]]; then
+  if [ -t 0 ]; then
+    { seed_from_lang; seed_from_tpl; } > "$path"
+  else
+    # content from stdin
+    cat > "$path"
+  fi
+fi
+
+# Ensure file exists (empty if nothing seeded)
+: > "$path"
+
+# Prepare a tiny nano profile for comfy defaults (non-intrusive, local)
+nanorc="$HOME/.nanotexrc"
+if [[ ! -f "$nanorc" ]]; then
+  cat > "$nanorc" <<'RC'
+set linenumbers
+set constantshow
+set softwrap
+set tabsize 2
+set autoindent
+set smarthome
+set backup
+RC
+fi
+
+# Open nano in --tempfile (auto-save on exit without confirmation)
+nano --rcfile "$nanorc" --tempfile "$path"
+
+# Post-save: set executable bit for scripts or if forced
+if [[ "$force_exec" == "true" || "$lang" =~ ^(sh|py|js)$ ]]; then
+  chmod +x "$path" || true
+fi
+
+# Normalize line endings if tool exists
+command -v dos2unix >/dev/null 2>&1 && dos2unix -q "$path" || true
+
+# Print a compact status line for automation logs
+printf 'nanotex: saved %s%s\n' "$path" \
+  "$( [[ -x "$path" ]] && printf ' (exec)' || printf '' )"
+```
+
+Then:
+
+```bash
+chmod +x ~/termux-automation/bin/nanotex
+```
+
+# 2) (Optional) templates
+
+Create a tiny templates directory:
+
+```bash
+mkdir -p ~/termux-automation/templates
+```
+
+Example extra template you might like:
+
+`~/termux-automation/templates/bash_script.tpl`
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Usage: ./$(basename "$0") [args]
+main() {
+  :
+}
+main "$@"
+```
+
+`~/termux-automation/templates/python_cli.tpl`
+
+```python
+#!/usr/bin/env python3
+import argparse, sys
+
+def main(argv=None):
+    p = argparse.ArgumentParser()
+    return 0
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+```
+
+# 3) Nice alias (speed-run)
+
+```bash
+echo "alias nt='$HOME/termux-automation/bin/nanotex'" >> ~/.bashrc
+. ~/.bashrc
+```
+
+# 4) How it behaves (the “already saved in nano” bit)
+
+* It launches **nano with `--tempfile`**, which writes changes directly to disk when you exit—no save prompt.
+* New files are **pre-seeded** from a language flag or template.
+* Script files get **`chmod +x`** automatically.
+* Works with pipes: `generate | nt --py tool.py` writes stdin first, then opens nano for touch-ups, then saves.
+
+# 5) Plug into your micro‑OS verbs (optional)
+
+Add this to your command palette mental map:
+
+* “New bash script `<path>`” → `nanotex --sh <path>`
+* “New Python tool `<path>`” → `nanotex --py <path>`
+* “Edit with autosave `<path>`” → `nanotex <path>`
+
+If you want this integrated as a **service** (e.g., exposed via your buttons server or a quick-action in your dashboard), I can hand you a tiny HTTP endpoint that shells out to `nanotex` with safe path rules.
+Love this. Let’s wire up a tiny **“nanotex”** wrapper so editing feels like nano, but files are already *saved* the moment you exit—no “Write out?” prompt—plus smart templates and exec bits for scripts.
+
+Here’s a drop‑in script and a couple of lightweight templates.
+
+# 1) `~/termux-automation/bin/nanotex` (make executable)
+
+```bash
+#!/usr/bin/env bash
+# nanotex: nano with autosave-on-exit, smart templates, and exec bits for scripts.
+# Usage:
+#   nanotex [--sh|--py|--js|--tpl NAME] [--exec] <path>
+#   echo 'print("hi")' | nanotex --py script.py
+set -euo pipefail
+
+show_help() {
+  cat <<'EOF'
+nanotex: open nano in --tempfile mode (auto-saves on exit), prefill templates, set exec bit for scripts.
+
+Flags:
+  --sh | --py | --js      Choose a built-in template (adds shebang if new file).
+  --tpl NAME              Use template file from $HOME/termux-automation/templates/NAME
+  --exec                  Force chmod +x on save (default for --sh/--py/--js).
+  -h | --help             Show help.
+
+Examples:
+  nanotex --sh ~/bin/backup
+  nanotex --py my_tool.py
+  echo '#!/usr/bin/env bash' | nanotex --sh run.sh
+EOF
+}
+
+lang="" ; tpl="" ; force_exec="false"
+args=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --sh|--py|--js) lang="${1#--}"; shift ;;
+    --tpl) tpl="${2:-}"; shift 2 ;;
+    --exec) force_exec="true"; shift ;;
+    -h|--help) show_help; exit 0 ;;
+    --) shift; break ;;
+    -* ) echo "Unknown option: $1" >&2; show_help; exit 2 ;;
+    *  ) args+=("$1"); shift ;;
+  esac
+done
+[[ ${#args[@]} -ge 1 ]] || { echo "Missing <path>."; show_help; exit 2; }
+path="${args[-1]}"
+
+mkdir -p "$(dirname "$path")"
+
+# Determine if file exists
+is_new="true"
+[[ -e "$path" ]] && is_new="false"
+
+# If it's a new file and a language/template was requested, preseed
+seed_from_lang() {
+  case "$lang" in
+    sh) printf '#!/usr/bin/env bash\nset -euo pipefail\n\n' ;;
+    py) printf '#!/usr/bin/env python3\n# -*- coding: utf-8 -*-\n\nif __name__ == "__main__":\n    pass\n' ;;
+    js) printf '#!/usr/bin/env node\n"use strict";\n\n' ;;
+    "") return 0 ;;
+  esac
+}
+
+seed_from_tpl() {
+  [[ -n "$tpl" ]] || return 0
+  local tdir="$HOME/termux-automation/templates"
+  local tfile="$tdir/$tpl"
+  [[ -f "$tfile" ]] || { echo "Template not found: $tfile" >&2; exit 3; }
+  cat "$tfile"
+}
+
+# If stdin is piped, prefer stdin content; else seed from lang/tpl for brand‑new files
+if [[ "$is_new" == "true" ]]; then
+  if [ -t 0 ]; then
+    { seed_from_lang; seed_from_tpl; } > "$path"
+  else
+    # content from stdin
+    cat > "$path"
+  fi
+fi
+
+# Ensure file exists (empty if nothing seeded)
+: > "$path"
+
+# Prepare a tiny nano profile for comfy defaults (non-intrusive, local)
+nanorc="$HOME/.nanotexrc"
+if [[ ! -f "$nanorc" ]]; then
+  cat > "$nanorc" <<'RC'
+set linenumbers
+set constantshow
+set softwrap
+set tabsize 2
+set autoindent
+set smarthome
+set backup
+RC
+fi
+
+# Open nano in --tempfile (auto-save on exit without confirmation)
+nano --rcfile "$nanorc" --tempfile "$path"
+
+# Post-save: set executable bit for scripts or if forced
+if [[ "$force_exec" == "true" || "$lang" =~ ^(sh|py|js)$ ]]; then
+  chmod +x "$path" || true
+fi
+
+# Normalize line endings if tool exists
+command -v dos2unix >/dev/null 2>&1 && dos2unix -q "$path" || true
+
+# Print a compact status line for automation logs
+printf 'nanotex: saved %s%s\n' "$path" \
+  "$( [[ -x "$path" ]] && printf ' (exec)' || printf '' )"
+```
+
+Then:
+
+```bash
+chmod +x ~/termux-automation/bin/nanotex
+```
+
+# 2) (Optional) templates
+
+Create a tiny templates directory:
+
+```bash
+mkdir -p ~/termux-automation/templates
+```
+
+Example extra template you might like:
+
+`~/termux-automation/templates/bash_script.tpl`
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Usage: ./$(basename "$0") [args]
+main() {
+  :
+}
+main "$@"
+```
+
+`~/termux-automation/templates/python_cli.tpl`
+
+```python
+#!/usr/bin/env python3
+import argparse, sys
+
+def main(argv=None):
+    p = argparse.ArgumentParser()
+    return 0
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+```
+
+# 3) Nice alias (speed-run)
+
+```bash
+echo "alias nt='$HOME/termux-automation/bin/nanotex'" >> ~/.bashrc
+. ~/.bashrc
+```
+
+# 4) How it behaves (the “already saved in nano” bit)
+
+* It launches **nano with `--tempfile`**, which writes changes directly to disk when you exit—no save prompt.
+* New files are **pre-seeded** from a language flag or template.
+* Script files get **`chmod +x`** automatically.
+* Works with pipes: `generate | nt --py tool.py` writes stdin first, then opens nano for touch-ups, then saves.
+
+# 5) Plug into your micro‑OS verbs (optional)
+
+Add this to your command palette mental map:
+
+* “New bash script `<path>`” → `nanotex --sh <path>`
+* “New Python tool `<path>`” → `nanotex --py <path>`
+* “Edit with autosave `<path>`” → `nanotex <path>`
+
+If you want this integrated as a **service** (e.g., exposed via your buttons server or a quick-action in your dashboard), I can hand you a tiny HTTP endpoint that shells out to `nanotex` with safe path rules.
+Heck yes. Let’s wire Copilot’s CLI into a smooth Termux workflow so you can *ask for a script → review → lint → run* without leaving the terminal.
+
+# 1) Quick prep
+
+```bash
+pkg update && pkg upgrade
+pkg install gh git vim # or micro/nano if you prefer
+gh auth login
+gh extension install github/gh-copilot
+# optional but recommended
+pkg install shellcheck
+termux-setup-storage  # grants access to /sdcard when you need it :contentReference[oaicite:0]{index=0}
+```
+
+# 2) Add tiny helpers to your shell
+
+Drop these into `~/.bashrc` (or `~/.zshrc`), then `source ~/.bashrc`.
+
+```bash
+# Make a scripts dir on PATH
+mkdir -p "$HOME/bin" "$HOME/scripts"
+case ":$PATH:" in *":$HOME/bin:"*) ;; *) export PATH="$HOME/bin:$PATH";; esac
+
+# ai: ask Copilot to propose a one‑liner or short sequence
+ai () {
+  gh copilot suggest "$*" | tee /dev/tty
+}
+
+# aiscript: ask Copilot to write a full Bash script and save it
+aiscript () {
+  local title="${1:-copilot_script}"
+  local out="$HOME/scripts/${title// /_}_$(date +%Y%m%d_%H%M%S).sh"
+  # Ask Copilot to output pure bash with a safe header
+  gh copilot suggest \
+    "Write a robust Bash script with 'set -euo pipefail' and comments. Task: $title. Output ONLY the script body (no markdown fences)." \
+    | sed '1i #!/usr/bin/env bash\nset -euo pipefail' \
+    > "$out"
+  chmod +x "$out"
+  echo "Saved: $out"
+  # Optional: lint
+  command -v shellcheck >/dev/null && shellcheck "$out" || true
+  # Open for a quick review
+  ${EDITOR:-vim} "$out"
+}
+```
+
+Why the storage step? Termux’s app-private prefix lives under `/data/data/com.termux/files`, and `termux-setup-storage` grants you a convenient bind to shared storage like `/sdcard` when you need to write backups or logs there.
+
+# 3) Generate a real script (example)
+
+Let’s make a safe log rotation tool that compresses logs older than 7 days under `~/logs`, skips `.keep`, and writes to `/sdcard/backups` if present.
+
+```bash
+aiscript "Rotate and gzip *.log files older than 7 days under \$HOME/logs, skip files named *.keep, create /sdcard/backups if available, write actions to \$HOME/logrotate.log, and support --dry-run"
+```
+
+That will:
+
+* create `~/scripts/Rotate_and_gzip_...sh`
+* prefill `set -euo pipefail`
+* open it in your editor so you can sanity-check destructive bits (`rm`, `mv`). Good hygiene.
+
+Tip: have Copilot add safety rails—`--dry-run`, `printf` previews, and `trap` for cleanup—by mentioning them in the prompt.
+
+# 4) Run it (first in dry-run!)
+
+```bash
+~/scripts/Rotate_and_gzip_*.sh --dry-run
+~/scripts/Rotate_and_gzip_*.sh
+```
+
+# 5) Fast “explain and refine” loop
+
+* Ask *why* something works:
+
+  ```bash
+  gh copilot explain "find \$HOME/logs -type f -name '*.log' -mtime +7 -print0 | xargs -0 -I{} gzip -9 {}"
+  ```
+* Ask Copilot to improve a snippet (e.g., portability, speed, failure modes):
+
+  ```bash
+  gh copilot suggest "Refactor this to handle filenames with spaces and report a summary: 
+  find \"$HOME/logs\" -type f -name '*.log' -mtime +7 -print0 | xargs -0 -I{} gzip -9 {}"
+  ```
+
+# 6) Organize + schedule (optional)
+
+Put scripts on your PATH and (if you run an SSH or cron‑like daemon in Termux) schedule them.
+
+```bash
+ln -s ~/scripts/Rotate_and_gzip_*.sh ~/bin/logrotate
+# run on demand:
+logrotate --dry-run
+```
+
+# 7) Best‑practice nudges in Termux land
+
+* Keep your packages fresh: `pkg update && pkg upgrade`
+* Be explicit with paths; shared storage is under `/sdcard` after you grant access.
+* When Copilot proposes `rm -rf`, ask for a `--dry-run` and an `echo` preview first. Science, not chaos.
+
+Want me to craft a ready‑to‑run backup script next—tar your `$HOME` (excluding `node_modules`, `.git`, etc.) into `/sdcard/backups` with datestamps and retention?
+Zoom! Kicking off **Code Review Mode** with a tiny “go” harness you can drop in right now. It runs your script/function, prints status, and logs everything to a timestamped file. Then you can paste your code and I’ll do the line-by-line review.
+
+```matlab
+function varargout = go(target, varargin)
+%GO Run a script or function, time it, and capture console output to a log.
+% Usage:
+%   go('myscript')               % runs myscript.m as a script
+%   out = go(@myfun, arg1,...)   % runs function handle with args
+name = 'run';
+timestamp = char(datetime('now','Format','yyyyMMdd_HHmmss'));
+logfile = sprintf('%s_%s.log', name, timestamp);
+
+diary(logfile); diary on
+fprintf('>>> %s started at %s\n', name, datestr(now, 31));
+t = tic;
+
+if isa(target,'function_handle')
+    [varargout{1:nargout}] = target(varargin{:});
+else
+    run(string(target)); % expects a script file on path
+end
+
+fprintf('\n>>> %s finished in %.3f s\n', name, toc(t));
+diary off
+fprintf('Log saved to %s\n', logfile);
+end
+```
+
+Quick progress print you can paste inside loops:
+
+```matlab
+N = 1000;
+for k = 1:N
+    % ... work ...
+    if mod(k,50)==0 || k==N
+        fprintf('run %d/%d (%.1f%%)\r', k, N, 100*k/N);
+    end
+end
+fprintf('\n');
+```
+
+Parallel-safe printing (no garbled lines):
+
+```matlab
+dq = parallel.pool.DataQueue;
+afterEach(dq, @(msg) fprintf('%s\n', msg));
+
+parfor i = 1:100
+    % ... work ...
+    send(dq, sprintf('run: worker %d did i=%d', getCurrentTask().ID, i));
+end
+```
+
+Ready when you are—drop your script/function here and I’ll tear into correctness, speed, and clarity.
+Here’s the super-short MATLAB cheat card for “print run” — pick and paste:
+
+```matlab
+disp("run")                     % simplest
+fprintf('run\n')                % printf-style
+fprintf('run %s\n', datestr(now,31))   % with timestamp
+```
+
+Capture+print the output of actually **running** a script:
+
+```matlab
+log = evalc('run myscript');    % run myscript.m and capture all console text
+fprintf('%s', log);             % print it (or write to a file)
+```
+
+“Print” a figure to a file named `run.png`:
+
+```matlab
+exportgraphics(gcf, 'run.png', 'Resolution', 300);   % R2020a+
+% or legacy:
+print(gcf, '-dpng', '-r300', 'run.png');
+```
+
+Pro tips:
+
+* Don’t name a variable `run` (it shadows MATLAB’s `run`). If you did:
+
+  ```matlab
+  clear run
+  which run -all
+  ```
+* For progress during a run:
+
+  ```matlab
+  fprintf('step %d/%d (%.1f%%)\r', k, N, 100*k/N);
+  ```
+
+Your move: drop in the snippet you’re actually using and I’ll tune it line-by-line.
+
+
+
 Golab
 <title>3D Coca-Cola Can</title> <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script> <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script> <style> body { margin: 0; overflow: hidden; font-family: 'Inter', sans-serif; background-color: #f0f0f0; display: flex; justify-content: center; align-items: center; min-height: 100vh; } #canContainer { width: 100%; height: 100vh; position: relative; /* Make sure the container is a positioning context */ } canvas { display: block; width: 100%; height: 100%; } #overlay { position: absolute; top: 10px; left: 10px; color: white; font-size: 16px; z-index: 1; padding: 10px; background-color: rgba(0, 0, 0, 0.5); border-radius: 5px; } </style>
 Loading...
